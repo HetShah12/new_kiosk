@@ -7,20 +7,33 @@ import { useCart } from '../contexts/CartContext';
 import { calculatePriceDetailsForUI } from '../services/priceService';
 import CartIndicator from '../components/common/CartIndicator';
 
-// Constants
 const UI_OUTER_PRINTABLE_PIXEL_WIDTH = 330;
 const UI_OUTER_PRINTABLE_PIXEL_HEIGHT = 488;
 const DYNAMIC_MIN_CANVA_WIDTH = UI_OUTER_PRINTABLE_PIXEL_WIDTH / 4;
 const DYNAMIC_MIN_CANVA_HEIGHT = UI_OUTER_PRINTABLE_PIXEL_HEIGHT / 4;
 
-// Constants from priceService.js, used in processAndAddItemToCart to set itemForCart.productVariant.basePrice
-const BASE_COSTS = { // Make sure this aligns with your priceService.js if used directly here
+const BASE_COSTS = {
     180: 349.00,
     240: 499.00
 };
 
-const frontColorMap = { black: '/tshirtmockups/blacktshirt.png', red: '/tshirtmockups/redfront.png', navy: '/tshirtmockups/bluefront.png', brown: '/tshirtmockups/brownfront.png', cream: '/tshirtmockups/creamfront.png', white: '/tshirtmockups/whitefront.png', };
-const backColorMap = {  black: '/tshirtmockups/blackback.png', red: '/tshirtmockups/backred.png', navy: '/tshirtmockups/bluefront.png', brown: '/tshirtmockups/backbrown.png', cream: '/tshirtmockups/backcream.png', white: '/tshirtmockups/backwhite.png',};
+// IMPORTANT: Verify these paths and add all supported colors
+const frontColorMap = { 
+    black: '/tshirtmockups/blacktshirt.png',
+    red: '/tshirtmockups/redfront.png', 
+    navy: '/tshirtmockups/bluefront.png',
+    brown: '/tshirtmockups/brownfront.png', 
+    cream: '/tshirtmockups/creamfront.png', 
+    white: '/tshirtmockups/whitefront.png', 
+};
+const backColorMap = {
+  black: '/tshirtmockups/blackback.png',
+  red: '/tshirtmockups/backred.png',     // e.g., redback.png
+  navy: '/tshirtmockups/backblue.png',    // e.g., navyback.png
+  brown: '/tshirtmockups/backbrown.png',  // e.g., brownback.png
+  cream: '/tshirtmockups/backcream.png',  // e.g., creamback.png
+  white: '/tshirtmockups/backwhite.png',  // e.g., whiteback.png
+};
 
 const OrderPreviewScreen = () => {
   const navigate = useNavigate();
@@ -35,117 +48,87 @@ const OrderPreviewScreen = () => {
   } = useCurrentItem();
   const { addItemToCart } = useCart();
 
-  // LOG AT THE VERY START OF THE COMPONENT
-  console.log("OrderPreviewScreen: Component RENDERED/UPDATED. Full currentItem from context:", currentItem ? JSON.parse(JSON.stringify(currentItem)) : "currentItem is null/undefined");
-  if (currentItem) {
-    console.log(`OrderPreviewScreen (on render): Thickness: ${currentItem.thickness}, Size: ${currentItem.size}`);
-    console.log(`OrderPreviewScreen (on render): Front Type: ${currentItem.frontCustomization?.type}, Back Type: ${currentItem.backCustomization?.type}`);
-  }
-
   const [isFrontView, setIsFrontView] = useState(true);
   const [uiTotalPrice, setUiTotalPrice] = useState(0);
   const [showStartOverModal, setShowStartOverModal] = useState(false);
   const [showAnimationModal, setShowAnimationModal] = useState(false);
   
   const outerPrintableAreaRef = useRef(null);
-  
   const activeCust = isFrontView ? currentItem?.frontCustomization : currentItem?.backCustomization;
   
-  const [rndPosition, setRndPosition] = useState({
-    x: activeCust?.position?.x ?? DEFAULT_CUSTOMIZATION_POSITION.x,
-    y: activeCust?.position?.y ?? DEFAULT_CUSTOMIZATION_POSITION.y,
-  });
-  const [rndSize, setRndSize] = useState({
-    width: activeCust?.position?.width || DEFAULT_CUSTOMIZATION_POSITION.width,
-    height: activeCust?.position?.height || DEFAULT_CUSTOMIZATION_POSITION.height,
-  });
+  const [rndPosition, setRndPosition] = useState(DEFAULT_CUSTOMIZATION_POSITION);
+  const [rndSize, setRndSize] = useState(DEFAULT_CUSTOMIZATION_POSITION);
 
   useEffect(() => {
-    const custToDisplay = isFrontView ? currentItem?.frontCustomization : currentItem?.backCustomization;
-    const pos = activeCust?.position || DEFAULT_CUSTOMIZATION_POSITION;
-    const defaultSize = DEFAULT_CUSTOMIZATION_POSITION;
-    setRndPosition({ x: pos.x, y: pos.y });
-    setRndSize({ width: pos.width, height: pos.height });
+    const custToSync = isFrontView ? currentItem?.frontCustomization : currentItem?.backCustomization;
+    const posToUse = custToSync?.position || DEFAULT_CUSTOMIZATION_POSITION;
+    const defaultSizeForRnd = DEFAULT_CUSTOMIZATION_POSITION;
+    console.log(`OrderPreviewScreen RND Sync (View: ${isFrontView ? 'Front' : 'Back'}): Customization to sync:`, custToSync);
+    console.log(`OrderPreviewScreen RND Sync: Position for RND:`, posToUse);
 
-     console.log("OrderPreviewScreen RND Sync: Active cust for RND:", custToDisplay);
-    setRndPosition({ x: pos.x, y: pos.y });
+    setRndPosition({ x: posToUse.x, y: posToUse.y });
     setRndSize({ 
-        width: pos.width || defaultSize.width, 
-        height: pos.height || defaultSize.height 
+        width: posToUse.width || defaultSizeForRnd.width, 
+        height: posToUse.height || defaultSizeForRnd.height 
     });
-  }, [ DEFAULT_CUSTOMIZATION_POSITION, isFrontView, currentItem]);
-
+  }, [isFrontView, currentItem, DEFAULT_CUSTOMIZATION_POSITION]);
 
   const handleInteractionEnd = (newPositionAndSize) => { 
-    if (activeCust) {
+    const currentActiveCustForSave = isFrontView ? currentItem?.frontCustomization : currentItem?.backCustomization;
+    if (currentActiveCustForSave) {
       const { x, y, width, height } = newPositionAndSize;
-      const currentPosInContext = activeCust.position || {};
+      const currentPosInContext = currentActiveCustForSave.position || {};
       if (Math.abs(currentPosInContext.x - x) > 0.1 ||
           Math.abs(currentPosInContext.y - y) > 0.1 ||
           Math.abs(currentPosInContext.width - width) > 0.1 ||
           Math.abs(currentPosInContext.height - height) > 0.1 ||
-          !activeCust.position ) {
-          const updatedCustomization = { ...activeCust, position: {x, y, width, height} };
+          !currentActiveCustForSave.position ) {
+          const updatedCustomization = { ...currentActiveCustForSave, position: {x, y, width, height} };
           setCustomization(isFrontView ? 'front' : 'back', updatedCustomization);
         }
     }
   };
 
   useEffect(() => {
-    console.log("OrderPreviewScreen: Pricing useEffect TRIGGERED.");
-    if (
-        currentItem && 
-        currentItem.size && 
-        currentItem.thickness
-    ) {
-        console.log("OrderPreviewScreen (Pricing useEffect): CONDITIONS MET for calculation.");
-        console.log("OrderPreviewScreen (Pricing useEffect): Recalculating price. currentItem:", JSON.parse(JSON.stringify(currentItem)));
-        console.log(`OrderPreviewScreen (Pricing useEffect): Details being passed to priceService - Size: ${currentItem.size}, Thickness: ${currentItem.thickness}, FrontType: ${currentItem.frontCustomization?.type}, BackType: ${currentItem.backCustomization?.type}`);
-        
+    if (currentItem && currentItem.size && currentItem.thickness) {
         const priceDetailsResult = calculatePriceDetailsForUI(currentItem);
-        console.log("OrderPreviewScreen (Pricing useEffect): Price calculation RESULT from service:", priceDetailsResult);
-
         const newTotalUnitPrice = (priceDetailsResult.totalUnitPrice || 0);
         const newGrandTotalForQuantity = newTotalUnitPrice * (currentItem.quantity || 1);
-        console.log(`OrderPreviewScreen (Pricing useEffect): NewTotalUnitPrice: ${newTotalUnitPrice}, Quantity: ${currentItem.quantity || 1}, NewGrandTotal: ${newGrandTotalForQuantity}`);
         setUiTotalPrice(newGrandTotalForQuantity);
 
         if (currentItem.calculatedUnitPrice !== newTotalUnitPrice ||
             JSON.stringify(currentItem.priceBreakdown) !== JSON.stringify(priceDetailsResult.priceBreakdownForDisplay)) {
-            console.log("OrderPreviewScreen (Pricing useEffect): Updating currentItem with new price details.");
             updateCurrentItem({
                 calculatedUnitPrice: newTotalUnitPrice,
                 priceBreakdown: priceDetailsResult.priceBreakdownForDisplay
             });
         }
-
         if (priceDetailsResult.errors && priceDetailsResult.errors.length > 0) {
-            console.warn("OrderPreviewScreen (Pricing useEffect): Price Calculation UI Errors from service:", priceDetailsResult.errors.join("; "));
+            console.warn("OrderPreviewScreen: Price Calculation Errors:", priceDetailsResult.errors.join("; "));
         }
     } else {
         setUiTotalPrice(0);
-        console.warn("OrderPreviewScreen (Pricing useEffect): CONDITIONS NOT MET for price calculation.");
-        if (currentItem) {
-            console.warn(`OrderPreviewScreen (Pricing useEffect): Missing - Size: ${currentItem.size ? 'OK' : 'MISSING'}, Thickness: ${currentItem.thickness ? 'OK' : 'MISSING'}`);
-        } else {
-            console.warn("OrderPreviewScreen (Pricing useEffect): currentItem is null or undefined.");
-        }
         if(currentItem && (currentItem.calculatedUnitPrice !== 0 || Object.keys(currentItem.priceBreakdown || {}).length > 0)){
              updateCurrentItem({ calculatedUnitPrice: 0, priceBreakdown: {} });
         }
     }
   }, [currentItem, updateCurrentItem]);
   
-  const handleQuantityChange = (amount) => {
+  const handleQuantityChange = (amount) => { 
     const newQuantity = Math.max(1, (currentItem.quantity || 1) + amount);
     updateCurrentItem({ quantity: newQuantity });
   };
-
-  const formatCustTextForDisplay = (cust) => {
+  const formatCustTextForDisplay = (cust) => { 
     if (!cust) return 'None';
     if (cust.type === 'ai_text_image') return `AI: ${cust.prompt ? cust.prompt.substring(0, 20) + '...' : 'Image'}${cust.removedBackground ? ' (BG Removed)' : ''}`;
     if (cust.type === 'uploaded_image') return `Uploaded: ${cust.originalFileName || cust.src?.substring(cust.src.lastIndexOf('/') + 1).split('?')[0]?.substring(0,20) || 'Image'}`;
-    if (cust.type === 'library_design') return `Library: ${cust.name || 'Design'}`;
+    if (cust.type === 'multi_library_design' && cust.elements && cust.elements.length > 0) {
+        return `Multi-Lib: ${cust.elements.length} designs`;
+    } else if (cust.type === 'library_design' && cust.name) { 
+        return `Library: ${cust.name}`;
+    } else if (cust.type === 'library_design' && cust.src) {
+        return `Library Design`;
+    }
     if (cust.type === 'embroidery_text') {
         const fontFamily = cust.font?.split(',')[0].replace(/'/g, '').replace(' Custom', '') || 'Default';
         return `Embroidery: "${cust.text}" (${fontFamily})`;
@@ -160,82 +143,103 @@ const OrderPreviewScreen = () => {
     : backColorMap[currentItem?.color?.toLowerCase() || 'black'] || backColorMap.black;
 
   const handleFlip = () => {
-    if (activeCust && rndPosition && rndSize) {
-      handleInteractionEnd({ x: rndPosition.x, y: rndPosition.y, width: rndSize.width, height: rndSize.height});
-    }
-    setIsFrontView(prev => !prev);
-  };
+  const currentActiveCustBeforeFlip = isFrontView ? currentItem?.frontCustomization : currentItem?.backCustomization;
+  console.log(`OrderPreview: Flipping. View is currently: ${isFrontView ? 'Front' : 'Back'}. Active cust before flip:`, currentActiveCustBeforeFlip);
+  if (currentActiveCustBeforeFlip && rndPosition && rndSize) {
+    handleInteractionEnd({ x: rndPosition.x, y: rndPosition.y, width: rndSize.width, height: rndSize.height});
+  }
+  setIsFrontView(prev => {
+    console.log(`OrderPreview: View will be: ${!prev ? 'Front' : 'Back'}`);
+    return !prev;
+  });
+};
   
-  const processAndAddItemToCart = async () => {
+  const processAndAddItemToCart = async () => { 
     if (!currentItem || !currentItem.size || !currentItem.thickness) {
-      alert("Please ensure all t-shirt options are selected before adding to cart.");
-      return null;
-    }
-    if (typeof currentItem.calculatedUnitPrice !== 'number') {
-        console.error("OrderPreviewScreen: calculatedUnitPrice is not available on currentItem. Cannot add to cart with accurate price.");
-        alert("Error: Price could not be finalized. Please try again or contact support.");
-        return null; 
-    }
-
-    const itemForCart = JSON.parse(JSON.stringify(currentItem));
-    
-    const variantDetails = {
-      productType: itemForCart.productType || 'T-Shirt',
-      size: itemForCart.size,
-      thickness: itemForCart.thickness,
-      thicknessName: itemForCart.thicknessName,
-      color: itemForCart.color || 'black',
-      basePrice: BASE_COSTS[itemForCart.thickness.toString()] 
-    };
-    
-    let variantId; 
-    if (itemForCart.thickness === 180) {
-      variantId = itemForCart.size === 'M' ? 1 : 2;
-    } else { 
-      variantId = 3; 
-    }
-  
-    itemForCart.productVariant = { 
-      ...variantDetails,
-      id: variantId, 
-    };
-
-    itemForCart.calculatedUnitPrice = currentItem.calculatedUnitPrice;
-    itemForCart.priceBreakdown = currentItem.priceBreakdown;
-  
-    const convertIfNeeded = async (customization) => {
-      if (!customization) return null;
-      const customizationCopy = { ...customization };
-      if (customization.src && customization.src.startsWith('blob:')) {
-        if (customization._blobDataForUpload instanceof Blob) {
-          const reader = new FileReader();
-          const base64 = await new Promise((resolve) => {
-            reader.onload = () => resolve(reader.result);
-            reader.readAsDataURL(customization._blobDataForUpload);
-          });
-          customizationCopy.src = base64;
-        }
+        alert("Please ensure all t-shirt options are selected before adding to cart.");
+        return null;
       }
-      delete customizationCopy._blobDataForUpload;
-      return customizationCopy;
-    };
+      if (typeof currentItem.calculatedUnitPrice !== 'number') {
+          console.error("OrderPreviewScreen: calculatedUnitPrice is not available on currentItem. Cannot add to cart with accurate price.");
+          alert("Error: Price could not be finalized. Please try again or contact support.");
+          return null; 
+      }
   
-    itemForCart.frontCustomization = await convertIfNeeded(itemForCart.frontCustomization);
-    itemForCart.backCustomization = await convertIfNeeded(itemForCart.backCustomization);
+      const itemForCart = JSON.parse(JSON.stringify(currentItem));
+      
+      const variantDetails = {
+        productType: itemForCart.productType || 'T-Shirt',
+        size: itemForCart.size,
+        thickness: itemForCart.thickness,
+        thicknessName: itemForCart.thicknessName,
+        color: itemForCart.color || 'black',
+        basePrice: BASE_COSTS[String(itemForCart.thickness)] 
+      };
+      
+      let variantId; 
+      if (String(itemForCart.thickness) === '180') { 
+        variantId = itemForCart.size === 'M' ? 1 : 2;
+      } else { 
+        variantId = 3; 
+      }
+    
+      itemForCart.productVariant = { 
+        ...variantDetails,
+        id: variantId, 
+      };
   
-    try {
-      console.log("OrderPreviewScreen: Adding to cart with item:", JSON.parse(JSON.stringify(itemForCart)));
-      const addedItem = await addItemToCart(itemForCart);
-      return addedItem;
-    } catch (error) {
-      console.error('Add to cart error:', error);
-      alert(`Failed to add to cart: ${error.response?.data?.message || error.message || 'Unknown error'}`);
-      return null;
-    }
+      itemForCart.calculatedUnitPrice = currentItem.calculatedUnitPrice;
+      itemForCart.priceBreakdown = currentItem.priceBreakdown;
+    
+      const convertIfNeeded = async (customization) => {
+          if (!customization) return null;
+          const customizationCopy = { ...customization };
+        
+          if (customizationCopy.type === 'multi_library_design' && Array.isArray(customizationCopy.elements)) {
+            customizationCopy.elements = await Promise.all(
+              customizationCopy.elements.map(async (el) => {
+                const elCopy = { ...el };
+                if (elCopy.src && elCopy.src.startsWith('blob:')) {
+                  if (elCopy._blobDataForUpload instanceof Blob) {
+                    const reader = new FileReader();
+                    elCopy.src = await new Promise((resolve) => {
+                      reader.onloadend = () => resolve(reader.result);
+                      reader.readAsDataURL(elCopy._blobDataForUpload);
+                    });
+                  }
+                  delete elCopy._blobDataForUpload;
+                }
+                return elCopy;
+              })
+            );
+          } else if (customizationCopy.src && customizationCopy.src.startsWith('blob:')) {
+            if (customizationCopy._blobDataForUpload instanceof Blob) {
+              const reader = new FileReader();
+              customizationCopy.src = await new Promise((resolve) => {
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(customizationCopy._blobDataForUpload);
+              });
+            }
+            delete customizationCopy._blobDataForUpload;
+          }
+          return customizationCopy;
+        };
+    
+      itemForCart.frontCustomization = await convertIfNeeded(itemForCart.frontCustomization);
+      itemForCart.backCustomization = await convertIfNeeded(itemForCart.backCustomization);
+    
+      try {
+        const addedItem = await addItemToCart(itemForCart);
+        return addedItem;
+      } catch (error) {
+        console.error('Add to cart error:', error);
+        alert(`Failed to add to cart: ${error.response?.data?.message || error.message || 'Unknown error'}`);
+        return null;
+      }
   };
-
-  const handleAddToCartAndDesignNew = async () => {
-    if (activeCust && rndPosition && rndSize) {
+  const handleAddToCartAndDesignNew = async () => { 
+    const currentActiveCustForSave = isFrontView ? currentItem?.frontCustomization : currentItem?.backCustomization;
+    if (currentActiveCustForSave && rndPosition && rndSize) {
         handleInteractionEnd({ x: rndPosition.x, y: rndPosition.y, width: rndSize.width, height: rndSize.height});
     }
     await new Promise(resolve => setTimeout(resolve, 50)); 
@@ -254,39 +258,42 @@ const OrderPreviewScreen = () => {
     }, 2500);
     }
   };
-
-  const handleProceedToCheckout = async () => {
-    if (activeCust && rndPosition && rndSize) {
+  const handleProceedToCheckout = async () => { 
+    const currentActiveCustForSave = isFrontView ? currentItem?.frontCustomization : currentItem?.backCustomization;
+    if (currentActiveCustForSave && rndPosition && rndSize) {
         handleInteractionEnd({ x: rndPosition.x, y: rndPosition.y, width: rndSize.width, height: rndSize.height});
     }
     await new Promise(resolve => setTimeout(resolve, 50));
     const added = await processAndAddItemToCart();
     if (added) { navigate('/delivery-options'); }
   };
-
-  const handleStartOverConfirmed = () => {
+  const handleStartOverConfirmed = () => { 
     if (currentItem) revokeItemBlobUrls();
-
     clearCurrentItemForNewProduct();
     navigate('/categories', { state: { fromStartOver: true } });
     setShowStartOverModal(false);
   };
 
+  // --- Styles ---
   const pageTitleStyle = { position:'absolute', left:'50%', transform:'translateX(-50%)', top: '98px', color: '#00566F', fontSize: '96px', fontFamily: "'SS Magnetic', sans-serif", fontWeight: 400, whiteSpace:'nowrap', textAlign: 'center' };
   const backArrowStyle = { width: '120px', height: '120px', left: '127px', top: '94px', position: 'absolute', cursor: 'pointer'};
   const productSummaryContainerStyle = { width: 'calc(100% - 256px)', maxWidth: '1954px', height: 'auto', left: '50%', transform: 'translateX(-50%)', top: '260px', position: 'absolute',  background: '#ECF5FF', borderRadius: '12px', padding: '30px', boxSizing: 'border-box', display: 'flex', gap: '30px'};
   const tshirtPreviewAreaStyle = { width: '750px', height: '700px', background: '#F0F8FF', borderRadius: '12px', position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', border: '1px solid #ccc', padding:'15px', boxSizing:'border-box'};
   const mockupSectionPreviewStyle = { position: 'relative', width: '100%', height: '100%' };
   const tshirtPreviewImageStyle = { width: '100%', height: '100%', objectFit: 'contain', position:'absolute', top:0, left:0, zIndex:0};
+  
   const outerPrintableAreaDynamicStyle = {
-    
-    display: (activeCust && (activeCust.src || activeCust.text)) ? 'block' : 'none',    width: `${UI_OUTER_PRINTABLE_PIXEL_WIDTH}px`, height: `${UI_OUTER_PRINTABLE_PIXEL_HEIGHT}px`,
+    display: (activeCust && (activeCust.text || activeCust.src || (activeCust.type === 'multi_library_design' && activeCust.elements?.length > 0))) ? 'block' : 'none',
     position: 'absolute',
-    border: '2px dashed #777', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+    width: `${UI_OUTER_PRINTABLE_PIXEL_WIDTH}px`, height: `${UI_OUTER_PRINTABLE_PIXEL_HEIGHT}px`,
+    border: '2px dashed rgba(0, 86, 111, 0.6)', 
+    top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
     boxSizing: 'border-box', zIndex: 1,
   };
+
   const rndStyle = { 
-    border: '1px dashed rgba(0,86,111,0.7)', backgroundColor: 'rgba(0,86,111,0.05)',
+    border: '1px solid rgba(0, 86, 111, 0.5)', 
+    backgroundColor: 'rgba(0, 86, 111, 0.03)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden', boxSizing: 'border-box',
   };
@@ -295,10 +302,10 @@ const OrderPreviewScreen = () => {
     width: '100%', height: '100%', display: 'flex', alignItems: 'center',
     justifyContent: 'center', textAlign: 'center', wordBreak: 'break-word',
     color: activeCust?.type === 'embroidery_text' ? activeCust?.color : (activeCust?.textColor || 'black'),
-    pointerEvents: 'none', boxSizing: 'border-box', padding: '5px',
+    pointerEvents: 'none', boxSizing: 'border-box', padding: '2px',
     fontFamily: activeCust?.font || 'Inter, sans-serif',
     fontSize: activeCust?.type === 'embroidery_text'
-        ? `${Math.max(10, Math.min(rndSize.height * 0.7, 30, (rndSize.height / 2.2 )))}px` 
+        ? `${Math.max(8, Math.min(rndSize.height * 0.6, 28, (rndSize.height / 2.5 )))}px` 
         : '16px',
   };
   const flipPreviewBtnStyle = { position:'absolute', top:'20px', right:'20px', padding:'12px 18px', backgroundColor:'#00566F', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', zIndex:20, fontSize:'20px' };
@@ -337,6 +344,11 @@ const OrderPreviewScreen = () => {
     return <div style={{padding: "50px", fontSize: "30px", textAlign: "center"}}>Loading item details or item is not fully configured. Please start by selecting a product and its options.</div>;
   }
 
+  const hasActiveVisualContent = activeCust && 
+                               (activeCust.text || 
+                                activeCust.src || 
+                                (activeCust.type === 'multi_library_design' && activeCust.elements?.length > 0));
+
   return (
     <>
       <CartIndicator />
@@ -353,11 +365,15 @@ const OrderPreviewScreen = () => {
       <div style={productSummaryContainerStyle}>
         <div style={tshirtPreviewAreaStyle}>
           <div style={mockupSectionPreviewStyle}>
-            <img id="tshirtPreviewImage" src={tshirtSrc || frontColorMap.black} alt="T-Shirt Preview" style={tshirtPreviewImageStyle} 
-              onError={(e) => { console.error(`Error loading T-shirt image: ${e.target.src}`); e.target.src = frontColorMap.black; }}
+            <img id="tshirtPreviewImage" src={tshirtSrc} alt="T-Shirt Preview" style={tshirtPreviewImageStyle} 
+              onError={(e) => { 
+                console.error(`Error loading T-shirt image: ${e.target.src}. Defaulting to black.`); 
+                e.target.src = isFrontView ? frontColorMap.black : backColorMap.black; 
+              }}
             />
-            <div ref={outerPrintableAreaRef} style={outerPrintableAreaDynamicStyle}>
-              {activeCust && (activeCust.src || activeCust.text) && (
+            {/* --- Conditionally render outer guide and Rnd area --- */}
+            {hasActiveVisualContent && (
+              <div ref={outerPrintableAreaRef} style={outerPrintableAreaDynamicStyle}>
                 <Rnd
                   style={rndStyle}
                   size={{ width: rndSize.width, height: rndSize.height }}
@@ -389,17 +405,18 @@ const OrderPreviewScreen = () => {
                   }}
                   disableDragging={false}
                 >
-                  {activeCust?.type === 'embroidery_text' && activeCust.text && (
+                  {activeCust.type === 'embroidery_text' && activeCust.text && (
                     <div style={designTextStyle}> 
                       {activeCust.text}
                     </div>
                   )}
-                  {activeCust?.src && 
+
+                  {activeCust.src && 
                    (activeCust.type === 'embroidery_design' || 
                     activeCust.type === 'uploaded_image' || 
                     activeCust.type === 'ai_text_image' ||
-                    activeCust.type === 'library_design' ||
-                    activeCust.type === 'ai_draw_image' 
+                    activeCust.type === 'ai_draw_image' ||
+                    (activeCust.type === 'library_design' && !activeCust.elements) 
                    ) && (
                     <img 
                       src={activeCust.src} 
@@ -409,9 +426,30 @@ const OrderPreviewScreen = () => {
                       onError={(e) => { console.error("Error loading design image in Rnd:", activeCust.src); e.target.style.display='none';}}
                     />
                   )}
+                  
+                  {activeCust.type === 'multi_library_design' && Array.isArray(activeCust.elements) && activeCust.elements.length > 0 && (
+                    <div style={{position: 'relative', width: '100%', height: '100%', pointerEvents: 'none'}}>
+                        {activeCust.elements.map((el, index) => (
+                            <img
+                                key={el.designId || index} 
+                                src={el.src}
+                                alt={el.name || `design-element-${index}`}
+                                style={{
+                                    position: 'absolute',
+                                    left: `${(el.position.x / UI_OUTER_PRINTABLE_PIXEL_WIDTH) * 100}%`,
+                                    top: `${(el.position.y / UI_OUTER_PRINTABLE_PIXEL_HEIGHT) * 100}%`,
+                                    width: `${(el.position.width / UI_OUTER_PRINTABLE_PIXEL_WIDTH) * 100}%`,
+                                    height: `${(el.position.height / UI_OUTER_PRINTABLE_PIXEL_HEIGHT) * 100}%`,
+                                    objectFit: 'contain',
+                                }}
+                                onError={(e) => { console.error("Error loading multi-library image element in Rnd:", el.src); e.target.style.display='none';}}
+                            />
+                        ))}
+                    </div>
+                  )}
                 </Rnd>
-              )}
-            </div>
+              </div>
+            )}
           </div>
           <button style={flipPreviewBtnStyle} onClick={handleFlip}>
             {isFrontView ? "View Back" : "View Front"}
